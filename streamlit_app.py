@@ -10,6 +10,7 @@ from typing import List, Optional, Tuple
 import qrcode
 import streamlit as st
 from PIL import Image
+from streamlit_qrcode_scanner import qrcode_scanner
 
 # Optional QR decoder (requires pyzbar + zbar on the system)
 try:
@@ -360,6 +361,7 @@ def main():
     st.title("Carregamento de volumes com QR (Streamlit)")
     st.session_state.setdefault("load_volume", "")
     st.session_state.setdefault("load_slot", "")
+    st.session_state.setdefault("scanner_enabled", False)
 
     cols = st.columns(3)
     with cols[0]:
@@ -485,8 +487,17 @@ def main():
             st.session_state["load_volume"] = ""
             st.session_state["load_slot"] = ""
 
-    # Optional camera scan (photo) para preencher volume
-    if st.checkbox("Usar câmera/foto para ler QR do volume (preenche automático)"):
+    st.subheader("Scanner (no navegador)")
+    st.caption("Use o leitor abaixo (JS) — se não ler, use a câmera/foto ou digite.")
+    scanned = qrcode_scanner(key="qr_scanner_component")
+    if scanned:
+        vol, desc = parse_qr_payload(scanned)
+        st.session_state["load_volume"] = vol
+        st.success(f"QR lido: {vol} {f'({desc})' if desc else ''}")
+        st.rerun()
+
+    # Optional camera scan (foto) para preencher volume (backup)
+    if st.checkbox("Usar câmera/foto (upload) para ler QR do volume (backup)"):
         uploaded = st.camera_input("Tire foto do QR ou faça upload", key="cam_load")
         if uploaded:
             content = uploaded.getvalue()
