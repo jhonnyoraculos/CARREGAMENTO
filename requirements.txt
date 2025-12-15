@@ -1,0 +1,5 @@
+streamlit>=1.40.0
+qrcode>=7.4.2
+Pillow>=10.4.0
+pyzbar>=0.1.9
+numpy>=1.26.0
