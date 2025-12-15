@@ -12,18 +12,6 @@ import streamlit as st
 from PIL import Image
 from streamlit_qrcode_scanner import qrcode_scanner
 
-# Optional QR decoder (requires pyzbar + zbar on the system)
-try:
-    from pyzbar.pyzbar import decode as qr_decode  # type: ignore
-except Exception:  # pragma: no cover
-    qr_decode = None
-
-# Fallback decoder via ZXing (requires Java runtime)
-try:
-    from pyzxing import BarCodeReader  # type: ignore
-except Exception:  # pragma: no cover
-    BarCodeReader = None
-
 DB_PATH = Path("carregamento_streamlit.db")
 
 
@@ -308,34 +296,6 @@ def generate_qr_base64(payload: dict) -> str:
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-def decode_qr_from_image(img_bytes: bytes) -> Optional[str]:
-    # Try pyzbar (needs zbar)
-    if qr_decode is not None:
-        try:
-            with Image.open(io.BytesIO(img_bytes)) as img:
-                results = qr_decode(img)
-            if results:
-                return results[0].data.decode("utf-8")
-        except Exception:
-            pass
-    # Fallback: ZXing via Java (pyzxing)
-    if BarCodeReader is not None:
-        try:
-            reader = BarCodeReader()
-            # Save temp file
-            tmp = io.BytesIO(img_bytes)
-            with Image.open(tmp) as img:
-                tmp_path = Path("tmp_qr_upload.png")
-                img.save(tmp_path)
-            res = reader.decode(str(tmp_path))
-            tmp_path.unlink(missing_ok=True)
-            if res and res.get("parsed"):
-                return res["parsed"]
-        except Exception:
-            pass
-    return None
-
-
 def parse_qr_payload(text: str) -> Tuple[str, Optional[str]]:
     try:
         data = json.loads(text)
@@ -488,27 +448,13 @@ def main():
             st.session_state["load_slot"] = ""
 
     st.subheader("Scanner (no navegador)")
-    st.caption("Use o leitor abaixo (JS) — se não ler, use a câmera/foto ou digite.")
+    st.caption("Use o leitor abaixo (JS). Se não ler, digite volume e slot manualmente.")
     scanned = qrcode_scanner(key="qr_scanner_component")
     if scanned:
         vol, desc = parse_qr_payload(scanned)
         st.session_state["load_volume"] = vol
         st.success(f"QR lido: {vol} {f'({desc})' if desc else ''}")
         st.rerun()
-
-    # Optional camera scan (foto) para preencher volume (backup)
-    if st.checkbox("Usar câmera/foto (upload) para ler QR do volume (backup)"):
-        uploaded = st.camera_input("Tire foto do QR ou faça upload", key="cam_load")
-        if uploaded:
-            content = uploaded.getvalue()
-            decoded = decode_qr_from_image(content)
-            if decoded:
-                vol, desc = parse_qr_payload(decoded)
-                st.success(f"QR lido: {vol} {f'({desc})' if desc else ''}")
-                st.session_state["load_volume"] = vol
-                st.rerun()
-            else:
-                st.error("Não foi possível ler o QR. Use outro ângulo/luz ou digite manualmente.")
 
     # Consult
     st.subheader("Consultar volume")
