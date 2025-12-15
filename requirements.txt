@@ -3,3 +3,4 @@ qrcode>=7.4.2
 Pillow>=10.4.0
 pyzbar>=0.1.9
 numpy>=1.26.0
+pyzxing>=1.0.4

@@ -17,6 +17,12 @@ try:
 except Exception:  # pragma: no cover
     qr_decode = None
 
+# Fallback decoder via ZXing (requires Java runtime)
+try:
+    from pyzxing import BarCodeReader  # type: ignore
+except Exception:  # pragma: no cover
+    BarCodeReader = None
+
 DB_PATH = Path("carregamento_streamlit.db")
 
 
@@ -302,13 +308,31 @@ def generate_qr_base64(payload: dict) -> str:
 
 
 def decode_qr_from_image(img_bytes: bytes) -> Optional[str]:
-    if qr_decode is None:
-        return None
-    with Image.open(io.BytesIO(img_bytes)) as img:
-        results = qr_decode(img)
-    if not results:
-        return None
-    return results[0].data.decode("utf-8")
+    # Try pyzbar (needs zbar)
+    if qr_decode is not None:
+        try:
+            with Image.open(io.BytesIO(img_bytes)) as img:
+                results = qr_decode(img)
+            if results:
+                return results[0].data.decode("utf-8")
+        except Exception:
+            pass
+    # Fallback: ZXing via Java (pyzxing)
+    if BarCodeReader is not None:
+        try:
+            reader = BarCodeReader()
+            # Save temp file
+            tmp = io.BytesIO(img_bytes)
+            with Image.open(tmp) as img:
+                tmp_path = Path("tmp_qr_upload.png")
+                img.save(tmp_path)
+            res = reader.decode(str(tmp_path))
+            tmp_path.unlink(missing_ok=True)
+            if res and res.get("parsed"):
+                return res["parsed"]
+        except Exception:
+            pass
+    return None
 
 
 def parse_qr_payload(text: str) -> Tuple[str, Optional[str]]:
