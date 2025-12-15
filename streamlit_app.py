@@ -333,9 +333,8 @@ def local_ip() -> str:
 def main():
     st.set_page_config(page_title="Carregamento QR (Streamlit)", layout="wide")
     st.title("Carregamento de volumes com QR (Streamlit)")
-    st.session_state.setdefault("load_volume", "")
-    st.session_state.setdefault("load_slot", "")
-    st.session_state.setdefault("scanner_enabled", False)
+    st.session_state.setdefault("prefill_volume", "")
+    st.session_state.setdefault("prefill_slot", "")
 
     cols = st.columns(3)
     with cols[0]:
@@ -446,9 +445,9 @@ def main():
     st.subheader("Carregamento (scan ou digitar)")
     col1, col2 = st.columns(2)
     with col1:
-        vol_input = st.text_input("Volume ID", value=st.session_state.get("load_volume", ""), key="load_volume")
+        vol_input = st.text_input("Volume ID", value=st.session_state.get("prefill_volume", ""), key="prefill_volume")
     with col2:
-        slot_val = st.text_input("Slot code", value=st.session_state.get("load_slot", ""), key="load_slot")
+        slot_val = st.text_input("Slot code", value=st.session_state.get("prefill_slot", ""), key="prefill_slot")
 
     if st.button("Confirmar e salvar carregamento"):
         if not trip_id or not user_id:
@@ -458,8 +457,8 @@ def main():
         else:
             record_event(trip_id, vol_input, slot_val, user_id)
             st.success(f"Salvo {vol_input.strip().upper()} em {slot_val.strip().upper()}.")
-            st.session_state["load_volume"] = ""
-            st.session_state["load_slot"] = ""
+            st.session_state["prefill_volume"] = ""
+            st.session_state["prefill_slot"] = ""
 
     st.subheader("Scanner (foto) - usando OpenCV")
     st.caption("Tire foto do QR ou faça upload. Se não ler, digite volume e slot manualmente.")
@@ -469,7 +468,7 @@ def main():
         decoded = decode_qr_from_image(content)
         if decoded:
             vol, desc = parse_qr_payload(decoded)
-            st.session_state["load_volume"] = vol
+            st.session_state["prefill_volume"] = vol
             st.success(f"QR lido: {vol} {f'({desc})' if desc else ''}")
             st.rerun()
         else:
