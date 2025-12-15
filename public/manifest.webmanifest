@@ -1,0 +1,17 @@
+{
+  "name": "Carregamento QR (PWA)",
+  "short_name": "Carregamento",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1f24",
+  "theme_color": "#0ea5e9",
+  "description": "Conferência de volumes e slots com QR, offline, em PWA.",
+  "icons": [
+    {
+      "src": "/next.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
