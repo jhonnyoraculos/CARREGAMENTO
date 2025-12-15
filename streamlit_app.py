@@ -10,7 +10,8 @@ from typing import List, Optional, Tuple
 import qrcode
 import streamlit as st
 from PIL import Image
-from streamlit_qrcode_scanner import qrcode_scanner
+import cv2
+import numpy as np
 
 DB_PATH = Path("carregamento_streamlit.db")
 
@@ -296,6 +297,19 @@ def generate_qr_base64(payload: dict) -> str:
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+def decode_qr_from_image(img_bytes: bytes) -> Optional[str]:
+    try:
+        file_bytes = np.asarray(bytearray(img_bytes), dtype=np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        detector = cv2.QRCodeDetector()
+        data, _, _ = detector.detectAndDecode(img)
+        if data:
+            return data
+    except Exception:
+        return None
+    return None
+
+
 def parse_qr_payload(text: str) -> Tuple[str, Optional[str]]:
     try:
         data = json.loads(text)
@@ -447,14 +461,19 @@ def main():
             st.session_state["load_volume"] = ""
             st.session_state["load_slot"] = ""
 
-    st.subheader("Scanner (no navegador)")
-    st.caption("Use o leitor abaixo (JS). Se não ler, digite volume e slot manualmente.")
-    scanned = qrcode_scanner(key="qr_scanner_component")
-    if scanned:
-        vol, desc = parse_qr_payload(scanned)
-        st.session_state["load_volume"] = vol
-        st.success(f"QR lido: {vol} {f'({desc})' if desc else ''}")
-        st.rerun()
+    st.subheader("Scanner (foto) - usando OpenCV")
+    st.caption("Tire foto do QR ou faça upload. Se não ler, digite volume e slot manualmente.")
+    uploaded = st.camera_input("Tire foto do QR ou faça upload", key="cam_load")
+    if uploaded:
+        content = uploaded.getvalue()
+        decoded = decode_qr_from_image(content)
+        if decoded:
+            vol, desc = parse_qr_payload(decoded)
+            st.session_state["load_volume"] = vol
+            st.success(f"QR lido: {vol} {f'({desc})' if desc else ''}")
+            st.rerun()
+        else:
+            st.error("Não foi possível ler o QR. Use outro ângulo/luz ou digite manualmente.")
 
     # Consult
     st.subheader("Consultar volume")
