@@ -1,17 +1,10 @@
-import base64
-import io
-import json
 import socket
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-import qrcode
 import streamlit as st
-from PIL import Image
-import cv2
-import numpy as np
 
 DB_PATH = Path("carregamento_streamlit.db")
 
@@ -65,7 +58,6 @@ def init_db():
         );
         """
     )
-    # Migration: add description column if missing
     cols = cur.execute("PRAGMA table_info(planned_volumes)").fetchall()
     has_desc = any(c[1] == "description" for c in cols)
     if not has_desc:
@@ -289,37 +281,6 @@ def next_volume_code() -> str:
     return f"VOL-{year}-{idx:05d}"
 
 
-def generate_qr_base64(payload: dict) -> str:
-    data = json.dumps(payload)
-    img = qrcode.make(data)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode("ascii")
-
-
-def decode_qr_from_image(img_bytes: bytes) -> Optional[str]:
-    try:
-        file_bytes = np.asarray(bytearray(img_bytes), dtype=np.uint8)
-        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        detector = cv2.QRCodeDetector()
-        data, _, _ = detector.detectAndDecode(img)
-        if data:
-            return data
-    except Exception:
-        return None
-    return None
-
-
-def parse_qr_payload(text: str) -> Tuple[str, Optional[str]]:
-    try:
-        data = json.loads(text)
-        if isinstance(data, dict) and "volume_id" in data:
-            return str(data["volume_id"]), data.get("description")
-    except Exception:
-        pass
-    return text, None
-
-
 def local_ip() -> str:
     try:
         return socket.gethostbyname(socket.gethostname())
@@ -331,8 +292,8 @@ def local_ip() -> str:
 # UI
 # -------------------------
 def main():
-    st.set_page_config(page_title="Carregamento QR (Streamlit)", layout="wide")
-    st.title("Carregamento de volumes com QR (Streamlit)")
+    st.set_page_config(page_title="Carregamento (códigos digitados)", layout="wide")
+    st.title("Carregamento de volumes (somente código digitado)")
     st.session_state.setdefault("prefill_volume", "")
     st.session_state.setdefault("prefill_slot", "")
 
@@ -341,9 +302,9 @@ def main():
         st.caption("Rede local")
         st.code(f"http://{local_ip()}:8501")
     with cols[1]:
-        st.caption("Para HTTPS/câmera mobile, usar proxy (Caddy/nginx) conforme README anterior")
+        st.caption("Fluxo: gerar código do volume → digitar código + slot no carregamento.")
     with cols[2]:
-        st.caption("Se a câmera falhar, digite volume/slot manualmente.")
+        st.caption("Se estiver offline, continue digitando manualmente.")
 
     # Sidebar selections
     users = list_users()
@@ -357,7 +318,7 @@ def main():
     if st.sidebar.button("Novo usuário"):
         name = st.sidebar.text_input("Nome do novo usuário", key="new_user_name")
         if name:
-            uid = create_user(name)
+            create_user(name)
             st.sidebar.success(f"Usuário criado: {name}")
             st.rerun()
 
@@ -365,7 +326,7 @@ def main():
     if st.sidebar.button("Nova viagem"):
         name = st.sidebar.text_input("Nome da viagem (ex: data + caminhão + motorista)", key="new_trip_name")
         if name:
-            tid = create_trip(name, datetime.now().date().isoformat(), "", "")
+            create_trip(name, datetime.now().date().isoformat(), "", "")
             st.sidebar.success(f"Viagem criada: {name}")
             st.rerun()
 
@@ -421,33 +382,25 @@ def main():
     else:
         st.info("Selecione uma viagem para cadastrar volumes planejados.")
 
-    # Create volume + QR com id gerado
-    st.subheader("Criar volume com ID gerado e QR")
+    # Criar volume com ID gerado (sem QR)
+    st.subheader("Criar volume com ID gerado")
     if trip_id:
-        qr_desc = st.text_input("Descrição do volume (opcional)", key="qr_desc")
-        if st.button("Gerar ID de volume + QR"):
+        vol_desc = st.text_input("Descrição do volume (opcional)", key="qr_desc")
+        if st.button("Gerar ID de volume"):
             volume_id = next_volume_code()
-            add_planned(trip_id, volume_id, qr_desc or None)
-            payload = {"volume_id": volume_id, "description": qr_desc or ""}
-            b64 = generate_qr_base64(payload)
-            st.success(f"Volume {volume_id} criado. QR abaixo:")
-            st.image(f"data:image/png;base64,{b64}", width=200)
-            st.download_button(
-                "Baixar QR (PNG)",
-                data=base64.b64decode(b64),
-                file_name=f"{volume_id}.png",
-                mime="image/png",
-            )
+            add_planned(trip_id, volume_id, vol_desc or None)
+            st.success("Volume criado. Entregue este código para quem vai digitar no carregamento:")
+            st.code(volume_id)
     else:
         st.info("Selecione uma viagem para criar volumes.")
 
-    # Load event (scan/digit)
-    st.subheader("Carregamento (scan ou digitar)")
+    # Load event (digitar)
+    st.subheader("Carregamento (digitar)")
     col1, col2 = st.columns(2)
     with col1:
-        vol_input = st.text_input("Volume ID", value=st.session_state.get("prefill_volume", ""), key="prefill_volume")
+        vol_input = st.text_input("Volume ID", value=st.session_state.get("prefill_volume", ""))
     with col2:
-        slot_val = st.text_input("Slot code", value=st.session_state.get("prefill_slot", ""), key="prefill_slot")
+        slot_val = st.text_input("Slot code", value=st.session_state.get("prefill_slot", ""))
 
     if st.button("Confirmar e salvar carregamento"):
         if not trip_id or not user_id:
@@ -460,23 +413,9 @@ def main():
             st.session_state["prefill_volume"] = ""
             st.session_state["prefill_slot"] = ""
 
-    st.subheader("Scanner (foto) - usando OpenCV")
-    st.caption("Tire foto do QR ou faça upload. Se não ler, digite volume e slot manualmente.")
-    uploaded = st.camera_input("Tire foto do QR ou faça upload", key="cam_load")
-    if uploaded:
-        content = uploaded.getvalue()
-        decoded = decode_qr_from_image(content)
-        if decoded:
-            vol, desc = parse_qr_payload(decoded)
-            st.session_state["prefill_volume"] = vol
-            st.success(f"QR lido: {vol} {f'({desc})' if desc else ''}")
-            st.rerun()
-        else:
-            st.error("Não foi possível ler o QR. Use outro ângulo/luz ou digite manualmente.")
-
     # Consult
     st.subheader("Consultar volume")
-    consult_val = st.text_input("Digite ou escaneie volume", key="consult_val")
+    consult_val = st.text_input("Digite volume", key="consult_val")
     if st.button("Consultar"):
         if not trip_id:
             st.error("Selecione uma viagem.")
